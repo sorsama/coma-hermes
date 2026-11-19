@@ -2,6 +2,6 @@
   "name": "coma",
   "label": "Coma",
   "description": "Pair the Coma phone app with this Hermes.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "api": "plugin_api.py"
 }

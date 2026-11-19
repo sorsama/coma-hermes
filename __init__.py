@@ -94,6 +94,6 @@ def register(ctx) -> None:
         try:
             link = core().LINK
             if link.is_set_up():
-                link.start()
+                link.start(lan=False)
         except Exception:
             pass

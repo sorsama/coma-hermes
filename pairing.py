@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import errno
 import http.server
 import importlib.util
 import json
@@ -267,6 +268,7 @@ class Link:
         self._info = {}
         self._info_at = 0.0
         self._lan = None
+        self._want_lan = False
         self._lan_error = ""
         self._name = socket.gethostname().split(".")[0].lower()
 
@@ -301,9 +303,16 @@ class Link:
 
     # -- lifecycle -----------------------------------------------------------------------------
 
-    def start(self) -> dict:
-        """Connects in the background and returns the status so far. A live link is left alone."""
+    def start(self, lan: bool = True) -> dict:
+        """Connects in the background and returns the status so far. A live link is left alone.
+
+        [lan] is whether to answer phones searching this Wi-Fi. Only one process on a machine can,
+        so the gateway's own link, whose code nobody sees, leaves that to whoever shows a code.
+        """
         with self._lock:
+            self._want_lan = self._want_lan or lan
+            if self._state == "on" and lan and self._lan is None:
+                self._lan, self._lan_error = self._open_lan()
             if self._state in ("starting", "waiting", "on"):
                 return self._status()
             self._generation += 1
@@ -314,7 +323,7 @@ class Link:
     def stop(self) -> dict:
         with self._lock:
             self._generation += 1
-            lan, self._lan = self._lan, None
+            lan, self._lan, self._want_lan = self._lan, None, False
             self._state, self._error, self._serving, self._token = "off", "", False, ""
         if lan is not None:
             lan.close()
@@ -378,6 +387,15 @@ class Link:
             "devices": self._info.get("devices", []),
         }
 
+    def _open_lan(self) -> tuple:
+        try:
+            return LanPairing(self._name, self._offer), ""
+        except OSError as failure:
+            if failure.errno in (errno.EADDRINUSE, 10048):
+                return None, ("Another Coma pairing screen on this machine is already answering phones on "
+                              "this Wi-Fi. Use its six-digit code, or scan the QR here.")
+            return None, f"Phones on this Wi-Fi can't find this machine by themselves ({failure}). The QR still works."
+
     def _fail(self, generation: int, message: str) -> None:
         with self._lock:
             if generation == self._generation:
@@ -423,11 +441,7 @@ class Link:
 
             serving = not info.get("online")
             token = relay.new_pairing()
-            lan, lan_error = None, ""
-            try:
-                lan = LanPairing(self._name, self._offer)
-            except OSError as failure:
-                lan_error = f"Phones on this Wi-Fi can't find this machine by themselves ({failure}). The QR still works."
+            lan, lan_error = self._open_lan() if self._want_lan else (None, "")
             with self._lock:
                 if not current():
                     if lan is not None:

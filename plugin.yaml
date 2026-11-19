@@ -1,5 +1,5 @@
 name: coma
-version: 0.2.2
+version: 0.2.3
 description: "Reach this Hermes from the Coma phone app: pairs by QR in Hermes Desktop, the terminal (hermes coma) or any chat (/coma), through a Coma relay."
 author: "Zyphite"
 kind: standalone
