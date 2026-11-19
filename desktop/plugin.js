@@ -1,5 +1,5 @@
 // Coma: the pairing page in Hermes Desktop. Plain ESM, loaded uncompiled, so no JSX here.
-import { Button, PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, host } from '@hermes/plugin-sdk'
+import { Button, Input, PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, host } from '@hermes/plugin-sdk'
 import { useEffect, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
@@ -56,6 +56,8 @@ function ComaPage() {
   const [status, setStatus] = useState(null)
   const [failure, setFailure] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [relay, setRelay] = useState('')
+  const [editing, setEditing] = useState(false)
 
   const apply = promise =>
     promise.then(
@@ -79,31 +81,29 @@ function ComaPage() {
     }
   }, [])
 
-  const act = path => {
+  const act = (path, body) => {
     if (busy || !rest) return
     setBusy(true)
-    apply(rest(path, { method: 'POST' })).finally(() => setBusy(false))
+    apply(rest(path, { method: 'POST', body })).finally(() => setBusy(false))
   }
 
   const state = status?.state ?? 'off'
   const on = state === 'on'
   const working = state === 'starting' || state === 'waiting'
+  const restart = state === 'waiting' && status?.needs_restart
   const body = []
 
   if (on) {
-    if (status.qr) body.push(jsx(Qr, { rows: status.qr }, 'qr'))
-    body.push(
-      jsx(
-        'div',
-        {
-          className: `text-sm ${muted}`,
-          children: status.qr
-            ? 'Open Coma on your phone, tap Scan pairing code and point it here.'
-            : 'Enter this address and key in Coma: Connect, then Enter an address by hand.'
-        },
-        'hint'
+    if (status.qr) {
+      body.push(jsx(Qr, { rows: status.qr }, 'qr'))
+      body.push(
+        jsx(
+          'div',
+          { className: `text-sm ${muted}`, children: 'Open Coma on your phone, tap Scan pairing code and point it here.' },
+          'hint'
+        )
       )
-    )
+    }
     if (status.code) {
       body.push(
         jsx(
@@ -118,18 +118,59 @@ function ComaPage() {
     } else if (status.lan_error) {
       body.push(jsx('div', { className: `text-sm ${muted}`, children: status.lan_error }, 'lan'))
     }
-    body.push(jsx(Row, { label: 'Address', value: status.address }, 'address'))
+    body.push(
+      jsx(
+        'div',
+        { className: `text-xs ${muted}`, children: 'A code pairs one phone and stops working after ten minutes.' },
+        'warning'
+      )
+    )
+
+    const limit = status.device_limit
     body.push(
       jsx(
         'div',
         {
-          className: `text-xs ${muted}`,
-          children: 'Anyone with this code can run commands on this machine, so keep it off screen shares.'
+          className: 'text-sm font-medium',
+          children: limit
+            ? `Phones paired: ${status.devices.length} of ${limit} (${status.plan} plan)`
+            : `Phones paired: ${status.devices.length} (${status.plan} plan)`
         },
-        'warning'
+        'devices-title'
       )
     )
-  } else if (state === 'waiting' && status.needs_restart) {
+    status.devices.forEach(device => {
+      body.push(
+        jsxs(
+          'div',
+          {
+            className: 'flex items-center justify-between gap-3 text-sm',
+            children: [
+              jsx('div', { className: 'truncate', children: device.name }),
+              jsx(Button, {
+                onClick: () => act('/devices/remove', { id: device.id }),
+                disabled: busy,
+                children: 'Unpair'
+              })
+            ]
+          },
+          `device-${device.id}`
+        )
+      )
+    })
+    if (limit && status.devices.length >= limit) {
+      body.push(
+        jsx(
+          'div',
+          {
+            className: `text-xs ${muted}`,
+            children: 'The free plan covers one phone. Plus, bought in the Coma app, covers any number.'
+          },
+          'limit'
+        )
+      )
+    }
+  } else if (restart) {
     body.push(
       jsx(
         'div',
@@ -147,7 +188,7 @@ function ComaPage() {
         'div',
         {
           className: `text-sm ${muted}`,
-          children: state === 'waiting' ? 'Waiting for the Hermes API server to answer.' : 'Opening a Cloudflare tunnel.'
+          children: state === 'waiting' ? 'Waiting for the Hermes API server to answer.' : 'Connecting to the relay.'
         },
         'working'
       )
@@ -159,8 +200,8 @@ function ComaPage() {
         {
           className: `text-sm ${muted}`,
           children:
-            'Pairing opens a free Cloudflare tunnel to this Hermes and shows a code for the Coma app. ' +
-            'The tunnel stays open until you stop it or Hermes quits.'
+            'Pairing links this Hermes to a Coma relay, so your phone can reach it from anywhere. ' +
+            'Your Hermes API key stays on this machine.'
         },
         'intro'
       )
@@ -171,9 +212,44 @@ function ComaPage() {
   if (failure) body.push(jsx('div', { className: 'text-sm', children: failure }, 'failure'))
 
   if (on || working) {
-    body.push(jsx(Button, { onClick: () => act('/stop'), disabled: busy, children: 'Stop pairing' }, 'stop'))
-  } else if (!(state === 'waiting' && status?.needs_restart)) {
+    body.push(jsx(Button, { onClick: () => act('/stop'), disabled: busy, children: 'Disconnect' }, 'stop'))
+  } else if (!restart) {
     body.push(jsx(Button, { onClick: () => act('/start'), disabled: busy, children: 'Start pairing' }, 'start'))
+  }
+
+  // The relay in use, and a way to point at your own.
+  if (status?.relay) body.push(jsx(Row, { label: 'Relay', value: status.relay }, 'relay'))
+  if (editing) {
+    body.push(
+      jsxs(
+        'div',
+        {
+          className: 'flex flex-col gap-2',
+          children: [
+            jsx(Input, {
+              value: relay,
+              placeholder: 'https://relay.example.com',
+              onChange: event => setRelay(event.target.value)
+            }),
+            jsx('div', {
+              className: `text-xs ${muted}`,
+              children: 'Phones paired through the current relay will have to pair again.'
+            }),
+            jsx(Button, {
+              disabled: busy || !relay.trim(),
+              onClick: () => {
+                act('/relay', { address: relay.trim() })
+                setEditing(false)
+              },
+              children: 'Use this relay'
+            })
+          ]
+        },
+        'relay-edit'
+      )
+    )
+  } else {
+    body.push(jsx(Button, { onClick: () => setEditing(true), children: 'Use my own relay' }, 'relay-change'))
   }
 
   return jsx('div', {

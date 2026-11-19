@@ -1,23 +1,19 @@
 # coma-hermes
 
-The Hermes Agent plugin that pairs the [Coma](https://github.com/sorsama/coma) phone app with your Hermes.
+The Hermes Agent plugin that lets the [Coma](https://github.com/sorsama/coma) phone app reach your
+Hermes from anywhere.
 
-It turns on Hermes' API server, opens a free Cloudflare quick tunnel to it, and shows a QR code the
-app scans. Nothing is stored in between: the phone talks to your Hermes through the tunnel.
+It turns on Hermes' API server and links Hermes to a Coma relay: Hermes dials out and holds a
+connection open, and the phone talks to Hermes through it. Nothing has to be opened on your router,
+and your Hermes API key never leaves your machine.
 
 ## Install
 
 ```
-hermes plugins install sorsama/coma-hermes --enable --force
+hermes plugins install sorsama/coma-hermes --enable
 ```
 
-`--force` is needed because Hermes' install-time security scan blocks this plugin by default. The
-scan flags every plugin that starts a tunnel, and this one does exactly that: it runs `cloudflared`
-to make your Hermes reachable from your phone. Run the command without `--force` first to read the
-findings, and look at `pairing.py` (it is short) before you override them.
-
-Then restart Hermes. You also need [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
-on the machine that runs Hermes. No Cloudflare account is needed.
+Then restart Hermes.
 
 ## Pair
 
@@ -26,35 +22,51 @@ Pick whichever is handy. All three show the same code.
 | Where | How |
 | --- | --- |
 | Hermes Desktop | Switch on **Coma** in Capabilities → Plugins, open **Coma** in the sidebar, press **Start pairing** |
-| Terminal | `hermes coma` (runs until Ctrl+C) |
-| Any Hermes chat | `/coma`, and `/coma stop` to close the tunnel |
+| Terminal | `hermes coma` |
+| Any Hermes chat | `/coma`, and `/coma stop` to drop the link |
 
 In the Coma app, tap **Scan pairing code** and point it at the QR. On the same Wi-Fi the app also
 lists the machine by name; pick it and type the six-digit code shown beside the QR.
 
 The first pairing adds `API_SERVER_ENABLED` and a random `API_SERVER_KEY` to Hermes' `.env` if they
-are missing, and asks you to restart Hermes once so the API server starts.
+are missing, and asks you to restart Hermes once so the API server starts. After that the gateway
+links to the relay by itself every time Hermes starts, so the phone can reach it whenever Hermes is
+running.
+
+## The relay
+
+By default the plugin uses the hosted relay at `https://coma-relay.zyphite.com`. Its free plan pairs
+one phone with each Hermes; Plus, a subscription in the Coma app, pairs any number.
+
+The relay is [open source](https://github.com/sorsama/coma-relay) and you can run your own on a
+free Cloudflare account, with no limits. Point the plugin at it with either of:
+
+```
+hermes coma --relay https://your.relay
+```
+
+or **Use my own relay** on the Coma page in Hermes Desktop. The `COMA_RELAY_URL` environment
+variable overrides both. Phones paired through the old relay have to pair again.
 
 ## What to know
 
-- **The code is a key to your machine.** The QR holds the tunnel address and the API key, which
-  lets its holder run commands through Hermes. Don't share it or show it on a screen share.
-- **The address changes.** A quick tunnel gets a new address every time pairing starts. Scan again
-  and the app updates the host it already has.
-- **Quick tunnels are best-effort.** Cloudflare gives them no uptime guarantee and limits how often
-  new ones can be opened. For something permanent, put Hermes behind a named tunnel or your own
-  HTTPS proxy and enter that address in the app by hand.
+- **A pairing code admits one phone** and stops working after ten minutes. Don't share it: a paired
+  phone can run commands through your Hermes.
+- **Unpairing a phone** is on the Coma page in Hermes Desktop.
+- **The relay can see what passes through it.** Traffic is encrypted to the relay and from the relay,
+  not end to end. If that matters to you, run your own relay.
 - **Finding the machine on Wi-Fi** uses a UDP broadcast on port 48642 and a short HTTP exchange on
-  the local network. The address and key are only returned for the right code, and the code is
-  redrawn after five wrong tries, but that exchange is not encrypted: on a network you don't trust,
-  use the QR.
+  the local network. The pairing token is only returned for the right code, and the code is redrawn
+  after five wrong tries, but that exchange is not encrypted: on a network you don't trust, use the QR.
+- **Settings** live in `coma-relay.json` in Hermes' home folder: the relay address and this Hermes'
+  id and secret there. Delete it to start over.
 
 ## Layout
 
 ```
 plugin.yaml              plugin manifest
-__init__.py              hermes coma and /coma
-pairing.py               tunnel, LAN pairing and QR, shared by every surface
+__init__.py              hermes coma, /coma, and the gateway's automatic link
+pairing.py               the link to the relay, LAN pairing and QR, shared by every surface
 dashboard/plugin_api.py  backend for the Desktop page (/api/plugins/coma)
 desktop/plugin.js        the Coma page in Hermes Desktop
 ```

@@ -1,10 +1,12 @@
-"""Coma: pair the Coma phone app with this Hermes.
+"""Coma: reach this Hermes from the Coma phone app, through a Coma relay.
 
-    hermes coma          in a terminal: shows the QR and pairing code, runs until Ctrl+C
-    /coma                in any Hermes chat: starts pairing and replies with the codes
-    /coma stop           closes the tunnel
+    hermes coma                    in a terminal: shows the pairing QR, runs until Ctrl+C
+    hermes coma --relay <address>  use your own relay instead of the default one
+    /coma                          in any Hermes chat: replies with the pairing QR
+    /coma stop                     drops the link to the relay
 
-Hermes Desktop also gets a Coma page (desktop/plugin.js) that shows the same QR.
+Hermes Desktop also gets a Coma page (desktop/plugin.js) that shows the same QR. Once a phone has
+been paired, the gateway reconnects to the relay by itself every time Hermes starts.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ from pathlib import Path
 
 
 def core():
-    """pairing.py, loaded once under one name so every surface in this process shares a pairing."""
+    """pairing.py, loaded once under one name so every surface in this process shares a link."""
     name = "coma_pairing_core"
     module = sys.modules.get(name)
     if module is None:
@@ -26,57 +28,72 @@ def core():
     return module
 
 
-def _slash(raw_args: str) -> str:
-    pairing = core().PAIRING
-    if raw_args.strip().lower() in ("stop", "off"):
-        pairing.stop()
-        return "Pairing stopped and the tunnel is closed."
-    status = pairing.start()
-    # A tunnel opens in a few seconds; wait for it so the reply can carry the codes.
-    deadline = time.time() + 45
-    while status["state"] == "starting" and time.time() < deadline:
+def _settled(link, status: dict, seconds: int) -> dict:
+    """Waits up to [seconds] for a starting link to connect, so a reply can carry the code."""
+    deadline = time.time() + seconds
+    while (status["state"] == "starting" or (status["state"] == "on" and not status["link"])) and time.time() < deadline:
         time.sleep(1)
-        status = pairing.status()
+        status = link.status()
+    return status
+
+
+def _slash(raw_args: str) -> str:
+    link = core().LINK
+    if raw_args.strip().lower() in ("stop", "off"):
+        link.stop()
+        return "The link to the relay is off. Phones can't reach this Hermes until you run /coma again."
+    status = _settled(link, link.start(), 30)
     text = core().describe(status, qr=True)
     return f"```\n{text}\n```" if status["state"] == "on" else text
 
 
 def _setup_cli(parser) -> None:
-    parser.add_argument("action", nargs="?", default="pair", choices=["pair"],
-                        help="pair (default): show the QR and pairing code until you press Ctrl+C")
+    parser.add_argument("--relay", metavar="ADDRESS",
+                        help="use this relay from now on (your own, for example) instead of the default one")
 
 
 def _run_cli(args) -> None:
     module = core()
-    pairing = module.PAIRING
+    link = module.LINK
     shown = None
     try:
-        status = pairing.start()
+        status = link.use_relay(args.relay) if getattr(args, "relay", None) else link.start()
         while True:
-            if status["state"] != shown:
-                shown = status["state"]
+            status = _settled(link, status, 30)
+            key = (status["state"], status["link"], len(status["devices"]))
+            if key != shown:
+                shown = key
                 print(module.describe(status, qr=True), flush=True)
-                if shown == "on":
-                    print("\nLeave this running. Press Ctrl+C to close the tunnel.", flush=True)
-                if shown == "error" or (shown == "waiting" and status["needs_restart"]):
+                if status["state"] == "on":
+                    print("\nLeave this running. Press Ctrl+C to stop.", flush=True)
+                if status["state"] == "error" or (status["state"] == "waiting" and status["needs_restart"]):
                     return
-            time.sleep(1)
-            status = pairing.status()
+            time.sleep(2)
+            status = link.status()
+    except module.LinkError as failure:
+        print(failure)
     except KeyboardInterrupt:
         pass
     finally:
-        pairing.stop()
-        if shown == "on":
-            print("\nTunnel closed.")
+        link.stop()
 
 
 def register(ctx) -> None:
     ctx.register_cli_command(
         name="coma", help="Pair the Coma phone app with this Hermes",
         setup_fn=_setup_cli, handler_fn=_run_cli,
-        description="Opens a Cloudflare tunnel to this Hermes and shows the QR and code the Coma app pairs with.",
+        description="Links this Hermes to a Coma relay and shows the QR and code the Coma app pairs with.",
     )
     ctx.register_command(
         "coma", handler=_slash, args_hint="[stop]",
         description="Show the QR and code that pair the Coma phone app with this Hermes.",
     )
+    # The gateway is the process that runs Hermes' API server, so it is the one that keeps the
+    # link up. It only does so once pairing has been set up, never on a fresh install.
+    if "gateway" in sys.argv[1:]:
+        try:
+            link = core().LINK
+            if link.is_set_up():
+                link.start()
+        except Exception:
+            pass

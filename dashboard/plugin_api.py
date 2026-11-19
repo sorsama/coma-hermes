@@ -10,8 +10,8 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
-def _pairing():
-    """The process-wide pairing from ../pairing.py, the same one /coma drives."""
+def _core():
+    """../pairing.py, the same module /coma and the gateway drive."""
     name = "coma_pairing_core"
     module = sys.modules.get(name)
     if module is None:
@@ -19,19 +19,35 @@ def _pairing():
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         spec.loader.exec_module(module)
-    return module.PAIRING
+    return module
 
 
 @router.get("/status")
 def status() -> dict:
-    return _pairing().status()
+    return _core().LINK.status()
 
 
 @router.post("/start")
 def start() -> dict:
-    return _pairing().start()
+    return _core().LINK.start()
 
 
 @router.post("/stop")
 def stop() -> dict:
-    return _pairing().stop()
+    return _core().LINK.stop()
+
+
+@router.post("/relay")
+def relay(body: dict) -> dict:
+    """Moves this Hermes to another relay: {"address": "https://…"}."""
+    core = _core()
+    try:
+        return core.LINK.use_relay(str(body.get("address", "")))
+    except core.LinkError as failure:
+        return {**core.LINK.status(), "state": "error", "error": str(failure)}
+
+
+@router.post("/devices/remove")
+def remove_device(body: dict) -> dict:
+    """Unpairs one phone: {"id": "…"}."""
+    return _core().LINK.remove_device(str(body.get("id", "")))
