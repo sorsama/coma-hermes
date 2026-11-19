@@ -18,11 +18,13 @@ from __future__ import annotations
 import asyncio
 import codecs
 import http.server
+import importlib.util
 import json
 import os
 import re
 import secrets
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -221,15 +223,15 @@ class LanPairing:
 
 
 def qr_rows(text: str):
-    """The QR of [text] as rows of '1' (dark) and '0', or None when the qrcode package is missing."""
-    try:
-        import qrcode
-    except ImportError:
-        return None
-    code = qrcode.QRCode(border=0, error_correction=qrcode.constants.ERROR_CORRECT_L)
-    code.add_data(text)
-    code.make(fit=True)
-    return ["".join("1" if cell else "0" for cell in row) for row in code.get_matrix()]
+    """The QR of [text] as rows of '1' (dark) and '0', or None when it is too long to draw."""
+    name = "coma_plugin_qr"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "qr.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return module.rows(text)
 
 
 def qr_text(text: str):

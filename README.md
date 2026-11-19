@@ -67,6 +67,7 @@ variable overrides both. Phones paired through the old relay have to pair again.
 plugin.yaml              plugin manifest
 __init__.py              hermes coma, /coma, and the gateway's automatic link
 pairing.py               the link to the relay, LAN pairing and QR, shared by every surface
+qr.py                    the QR encoder, so pairing needs no extra package
 dashboard/plugin_api.py  backend for the Desktop page (/api/plugins/coma)
 desktop/plugin.js        the Coma page in Hermes Desktop
 ```
