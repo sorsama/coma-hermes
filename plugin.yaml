@@ -1,0 +1,5 @@
+name: coma
+version: 0.1.0
+description: "Pair the Coma phone app with this Hermes: a QR code in Hermes Desktop, the terminal (hermes coma) or any chat (/coma), over a free Cloudflare tunnel."
+author: "Zyphite"
+kind: standalone
