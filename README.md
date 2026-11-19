@@ -8,8 +8,13 @@ app scans. Nothing is stored in between: the phone talks to your Hermes through 
 ## Install
 
 ```
-hermes plugins install sorsama/coma-hermes --enable
+hermes plugins install sorsama/coma-hermes --enable --force
 ```
+
+`--force` is needed because Hermes' install-time security scan blocks this plugin by default. The
+scan flags every plugin that starts a tunnel, and this one does exactly that: it runs `cloudflared`
+to make your Hermes reachable from your phone. Run the command without `--force` first to read the
+findings, and look at `pairing.py` (it is short) before you override them.
 
 Then restart Hermes. You also need [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 on the machine that runs Hermes. No Cloudflare account is needed.
