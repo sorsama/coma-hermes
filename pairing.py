@@ -70,7 +70,7 @@ def _read_env(path: Path) -> dict:
 
 
 def ensure_api_server(env_path: Path) -> tuple:
-    """Returns (key, port, changed). Appends only the settings that are missing from Hermes' .env."""
+    """Returns (key, address, changed). Appends only the settings that are missing from Hermes' .env."""
     values = _read_env(env_path)
     additions = []
     if values.get("API_SERVER_ENABLED", "").lower() not in ("1", "true", "yes", "on"):
@@ -82,12 +82,18 @@ def ensure_api_server(env_path: Path) -> tuple:
     if additions:
         with env_path.open("a", encoding="utf-8") as handle:
             handle.write("\n# Added by the coma plugin\n" + "\n".join(additions) + "\n")
-    return key, int(values.get("API_SERVER_PORT") or DEFAULT_PORT), bool(additions)
+    # Hermes can be told to listen on one address only (a VPN address, say); reach it there.
+    host = values.get("API_SERVER_HOST", "").strip()
+    if host in ("", "0.0.0.0", "::", "localhost"):
+        host = "127.0.0.1"
+    if ":" in host:
+        host = f"[{host}]"
+    return key, f"http://{host}:{int(values.get('API_SERVER_PORT') or DEFAULT_PORT)}", bool(additions)
 
 
-def api_server_up(port: int) -> bool:
+def api_server_up(address: str) -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3) as response:
+        with urllib.request.urlopen(f"{address}/health", timeout=3) as response:
             return response.status == 200
     except (urllib.error.URLError, OSError):
         return False
@@ -380,14 +386,14 @@ class Link:
             return generation == self._generation
 
         try:
-            key, port, changed = ensure_api_server(hermes_home() / ".env")
+            key, local, changed = ensure_api_server(hermes_home() / ".env")
             with self._lock:
                 self._changed_env = changed or self._changed_env
-            if not api_server_up(port):
+            if not api_server_up(local):
                 with self._lock:
                     if current():
                         self._state = "waiting"
-                while not api_server_up(port):
+                while not api_server_up(local):
                     if not current():
                         return
                     time.sleep(2)
@@ -430,7 +436,7 @@ class Link:
                 self._lan, self._lan_error, self._serving = lan, lan_error, serving
                 self._state = "on"
             if serving:
-                asyncio.run(self._serve(generation, relay, port, key))
+                asyncio.run(self._serve(generation, relay, local, key))
         except LinkError as failure:
             self._fail(generation, str(failure))
         except Exception as failure:  # nothing here may take the host process down
@@ -438,10 +444,9 @@ class Link:
 
     # -- the socket ----------------------------------------------------------------------------
 
-    async def _serve(self, generation: int, relay: Relay, port: int, key: str) -> None:
+    async def _serve(self, generation: int, relay: Relay, local: str, key: str) -> None:
         import aiohttp
 
-        local = f"http://127.0.0.1:{port}"
         wait = 1
         async with aiohttp.ClientSession(headers={"User-Agent": "coma-hermes"}) as session:
             while generation == self._generation:
