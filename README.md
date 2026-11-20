@@ -38,8 +38,7 @@ running.
 By default the plugin uses the hosted relay at `https://coma-relay.zyphite.com`. Its free plan pairs
 one phone with each Hermes; Plus, a subscription in the Coma app, pairs any number.
 
-The relay is [open source](https://github.com/sorsama/coma-relay) and you can run your own on a
-free Cloudflare account, with no limits. Point the plugin at it with either of:
+To point the plugin at a different relay, use either of:
 
 ```
 hermes coma --relay https://your.relay
@@ -54,7 +53,8 @@ variable overrides both. Phones paired through the old relay have to pair again.
   phone can run commands through your Hermes.
 - **Unpairing a phone** is on the Coma page in Hermes Desktop.
 - **The relay can see what passes through it.** Traffic is encrypted to the relay and from the relay,
-  not end to end. If that matters to you, run your own relay.
+  not end to end. If that matters to you, skip the relay: in the app, type the address and API key
+  of a host on your own network, VPN or HTTPS proxy.
 - **Finding the machine on Wi-Fi** uses a UDP broadcast on port 48642 and a short HTTP exchange on
   the local network. The pairing token is only returned for the right code, and the code is redrawn
   after five wrong tries, but that exchange is not encrypted: on a network you don't trust, use the QR.

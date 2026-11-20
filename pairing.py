@@ -9,7 +9,7 @@ machine in the app and typing the six-digit code. Either way it ends up with a o
 token for the relay.
 
 The relay is https://coma-relay.zyphite.com unless you point somewhere else: set COMA_RELAY_URL, or
-run `hermes coma --relay https://your.relay`. The relay is open source (sorsama/coma-relay).
+run `hermes coma --relay https://another.relay`.
 
 The terminal command, the /coma chat command and the Desktop page all drive this module.
 """

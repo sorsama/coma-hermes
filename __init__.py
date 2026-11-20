@@ -1,7 +1,7 @@
 """Coma: reach this Hermes from the Coma phone app, through a Coma relay.
 
     hermes coma                    in a terminal: shows the pairing QR, runs until Ctrl+C
-    hermes coma --relay <address>  use your own relay instead of the default one
+    hermes coma --relay <address>  use another relay instead of the default one
     /coma                          in any Hermes chat: replies with the pairing QR
     /coma stop                     drops the link to the relay
 
