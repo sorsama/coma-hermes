@@ -48,17 +48,76 @@ def _redact(value: Any, key: str = "") -> Any:
     return value
 
 
-def _skills() -> dict:
-    from tools.skills_tool import _is_skill_disabled, _skill_catalog
+def _disabled_names() -> set:
+    """Skills switched off in config.yaml, globally or for the API server."""
+    try:
+        from hermes_cli.config import load_config
+        skills = load_config().get("skills") or {}
+        names = set(skills.get("disabled") or [])
+        names |= set((skills.get("platform_disabled") or {}).get("api_server") or [])
+        return names
+    except Exception:
+        return set()
+
+
+def _catalog() -> list:
+    """(name, description, category) of every installed skill. Hermes has renamed and re-signed its
+    skill listing helpers more than once, so each known shape is tried, then the skills folder itself."""
+    attempts = []
+    try:
+        from tools import skills_tool
+    except Exception as exc:
+        skills_tool = None
+        attempts.append(exc)
+    if skills_tool is not None:
+        for call in (
+            lambda: [(s.get("load_name"), s) for s in skills_tool._skill_catalog(skip_disabled=False)],
+            lambda: [(s.get("load_name"), s) for s in skills_tool._skill_catalog()],
+            lambda: [(s.get("name"), s) for s in skills_tool.find_all_skills(skip_disabled=False)],
+            lambda: [(s.get("name"), s) for s in skills_tool.find_all_skills()],
+        ):
+            try:
+                return [(name, s.get("description") or "", s.get("category") or "") for name, s in call() if name]
+            except Exception as exc:  # a signature this Hermes doesn't have: try the next
+                attempts.append(exc)
+    rows = _scan_skill_folders()
+    if rows or not attempts:
+        return rows
+    raise attempts[-1]
+
+
+def _scan_skill_folders() -> list:
+    """Reads SKILL.md front matter under Hermes' skills folder: the listing of last resort."""
+    import os
+    import re
+    from pathlib import Path
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    root = home / "skills"
     rows = []
-    for skill in _skill_catalog(skip_disabled=False):
-        name = skill.get("load_name")
-        if not name:
+    if not root.is_dir():
+        return rows
+    # os.walk skips folders it can't open (a dangling link, say) instead of failing the whole list.
+    found = [Path(top) / "SKILL.md" for top, _dirs, files in os.walk(root, onerror=lambda _e: None) if "SKILL.md" in files]
+    for skill_md in found:
+        try:
+            text = skill_md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
-        rows.append({
-            "name": name, "description": skill.get("description") or "", "category": skill.get("category") or "",
-            "enabled": not _is_skill_disabled(name, platform="api_server"), "source": "local",
-        })
+        head = text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else ""
+        field = lambda key: (re.search(rf"(?m)^{key}:\s*[\"']?(.*?)[\"']?\s*$", head) or [None, ""])[1]
+        relative = skill_md.parent.relative_to(root)
+        name = field("name") or skill_md.parent.name
+        category = field("category") or (relative.parts[0] if len(relative.parts) > 1 else "")
+        rows.append((name, field("description"), category))
+    return rows
+
+
+def _skills() -> dict:
+    off = _disabled_names()
+    rows = [
+        {"name": name, "description": about, "category": category, "enabled": name not in off, "source": "local"}
+        for name, about, category in _catalog()
+    ]
     try:
         from hermes_cli.plugins import discover_plugins, get_plugin_manager
         discover_plugins()
