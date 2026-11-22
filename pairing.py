@@ -94,6 +94,18 @@ def ensure_api_server(env_path: Path) -> tuple:
     return key, f"http://{host}:{int(values.get('API_SERVER_PORT') or DEFAULT_PORT)}", bool(additions)
 
 
+def lan_api(env_path: Path) -> tuple:
+    """(port, key, reachable): whether phones on this network can reach the API server directly.
+
+    Hermes' API server listens on 127.0.0.1 unless API_SERVER_HOST says otherwise; only then is
+    a direct connection on the LAN possible. The key never goes out with a search answer or a QR,
+    only with the right six-digit code."""
+    values = _read_env(env_path)
+    host = values.get("API_SERVER_HOST", "").strip() or "127.0.0.1"
+    reachable = host not in ("127.0.0.1", "localhost", "::1") and not host.startswith("127.")
+    return int(values.get("API_SERVER_PORT") or DEFAULT_PORT), values.get("API_SERVER_KEY", ""), reachable
+
+
 def api_server_up(address: str) -> bool:
     try:
         with urllib.request.urlopen(f"{address}/health", timeout=3) as response:
@@ -213,7 +225,14 @@ class LanPairing:
         self.http.server_close()
 
     def _answer_searches(self) -> None:
-        reply = json.dumps({"coma": 1, "name": self.name, "port": self.http.server_address[1]}).encode()
+        answer = {"coma": 1, "name": self.name, "port": self.http.server_address[1]}
+        try:
+            api_port, _key, reachable = lan_api(hermes_home() / ".env")
+            # "api" tells the phone it can skip the relay on this Wi-Fi; "local_only" that it can't yet.
+            answer.update({"api": api_port if reachable else 0, "local_only": not reachable})
+        except Exception:
+            pass
+        reply = json.dumps(answer).encode()
         while True:
             try:
                 data, sender = self.udp.recvfrom(64)
@@ -368,6 +387,18 @@ class Link:
         relay = self._relay
         return {"relay": relay.address, "host": relay.host_id, "token": self._token, "name": self._name}
 
+    def _lan_offer(self) -> dict:
+        """What the right six-digit code gets on this Wi-Fi: the relay offer, plus the API server's
+        port and key when phones here can reach it directly."""
+        offer = self._offer()
+        try:
+            port, key, reachable = lan_api(hermes_home() / ".env")
+            if reachable and key:
+                offer.update({"direct_port": port, "key": key})
+        except Exception:
+            pass
+        return offer
+
     def _status(self) -> dict:
         on = self._state == "on" and self._relay is not None and bool(self._token)
         link = "coma://pair?" + urllib.parse.urlencode(self._offer()) if on else ""
@@ -389,7 +420,7 @@ class Link:
 
     def _open_lan(self) -> tuple:
         try:
-            return LanPairing(self._name, self._offer), ""
+            return LanPairing(self._name, self._lan_offer), ""
         except OSError as failure:
             if failure.errno in (errno.EADDRINUSE, 10048):
                 return None, ("Another Coma pairing screen on this machine is already answering phones on "

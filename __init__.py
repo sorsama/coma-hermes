@@ -88,6 +88,14 @@ def register(ctx) -> None:
         "coma", handler=_slash, args_hint="[stop]",
         description="Show the QR and code that pair the Coma phone app with this Hermes.",
     )
+    # The settings, skills, plugins and connectors the app shows: extra routes on the API server.
+    try:
+        spec = importlib.util.spec_from_file_location("coma_api_routes", Path(__file__).resolve().parent / "api_routes.py")
+        routes = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(routes)
+        routes.install()
+    except Exception:
+        pass
     # The gateway is the process that runs Hermes' API server, so it is the one that keeps the
     # link up. It only does so once pairing has been set up, never on a fresh install.
     if "gateway" in sys.argv[1:]:

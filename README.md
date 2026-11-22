@@ -33,6 +33,19 @@ are missing, and asks you to restart Hermes once so the API server starts. After
 links to the relay by itself every time Hermes starts, so the phone can reach it whenever Hermes is
 running.
 
+## Skip the relay on your own Wi-Fi
+
+Hermes' API server listens on the computer itself unless told otherwise. Add this to Hermes' `.env`
+and restart Hermes, and phones on the same network can talk to it directly:
+
+```
+API_SERVER_HOST=0.0.0.0
+```
+
+Then the app offers **Direct on this Wi-Fi** when you pair with the six-digit code, and it also finds
+the API server by itself even without pairing running (you type the `API_SERVER_KEY`). A direct
+connection only works on that network; pair through the relay to reach Hermes from anywhere.
+
 ## The relay
 
 By default the plugin uses the hosted relay at `https://coma-relay.zyphite.com`. Its free plan pairs
@@ -58,6 +71,13 @@ variable overrides both. Phones paired through the old relay have to pair again.
 - **Finding the machine on Wi-Fi** uses a UDP broadcast on port 48642 and a short HTTP exchange on
   the local network. The pairing token is only returned for the right code, and the code is redrawn
   after five wrong tries, but that exchange is not encrypted: on a network you don't trust, use the QR.
+- **Direct pairing hands over the API key.** With `API_SERVER_HOST=0.0.0.0`, the right six-digit
+  code returns the API server's port and key along with the relay offer. The QR and `/coma` replies
+  never carry the key.
+- **What the app reads and changes.** The plugin adds routes under `/api/coma/` to Hermes' API
+  server, behind its usual API key: the skills list with on/off switches, plugins, MCP connectors,
+  the context window of a model, and Hermes Desktop's settings (read and written in `config.yaml`;
+  values of keys, tokens and passwords are masked). They appear the next time Hermes starts.
 - **Settings** live in `coma-relay.json` in Hermes' home folder: the relay address and this Hermes'
   id and secret there. Delete it to start over.
 
@@ -67,6 +87,7 @@ variable overrides both. Phones paired through the old relay have to pair again.
 plugin.yaml              plugin manifest
 __init__.py              hermes coma, /coma, and the gateway's automatic link
 pairing.py               the link to the relay, LAN pairing and QR, shared by every surface
+api_routes.py            the /api/coma/ routes the app reads: skills, plugins, connectors, settings
 qr.py                    the QR encoder, so pairing needs no extra package
 dashboard/plugin_api.py  backend for the Desktop page (/api/plugins/coma)
 desktop/plugin.js        the Coma page in Hermes Desktop
